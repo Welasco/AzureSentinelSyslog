@@ -291,7 +291,7 @@ Syslog
 ![Kusto Query Test](media/kusto-syslog-test.png)
 
 
-## Configuring RSyslog Forward
+## 5. Configuring RSyslog to receive messages from Network
 
 By default RSyslog doesn't listen to any TCP/UDP port. To make a Syslog Server become a forwarder server you must load a TCP or UDP module (or both). Here is the changes you must do at /etc/rsyslog.conf to make RSyslog start listening in both 514 TCP and UDP:
 
@@ -372,7 +372,7 @@ Syslog
 
 At this point you have a full functioning Linux RSyslog forwarder server. It's able to receive remote data from network under TCP/UDP 514 port and forward to Log Analytics agent (OMSAgent) under UDP 25224. You can confirm the forward configuration by checking the file that was created by Log Analytics agent (OMSAgent) used to setup RSyslog "/etc/rsyslog.d/95-omsagent.conf".
 
-## 5. Configuring RSyslog to forward  Common Event Format (CEF) messages
+## 6. Configuring RSyslog to forward  Common Event Format (CEF) messages
 
 # Precisa de validação
 
@@ -430,7 +430,7 @@ if $hostname == 'corp-fw' then {
 }
 [victor@CentOSSyslog rsyslog.d]$
 
-## 6. Validate Configuration
-
 ## 7. Troubleshooting
+
+
 
