@@ -21,7 +21,13 @@ The Azure Sentinel agent, which is actually the Log Analytics agent, converts CE
 
 Here is a diagram of how it works:
 
-![Syslog OnPrem](media/cef-syslog-onprem.png)
+You can host the Syslog forwarder server either On-Prem or in Azure VM:
+
+- On-Prem with Log Analytics agent installed:
+    ![Syslog OnPrem](media/cef-syslog-onprem.png)
+
+- Azure VM with Log Analytics agent installed:
+    ![Syslog Azure VM](media/cef-syslog-azure.png)
 
 ## 2. What is Syslog?
 
@@ -117,6 +123,19 @@ MSGID | 123 | Message-ID: 123 |
 STRUCTURED-DATA | [timeQuality tzKnown="1" isSynced="1" syncAccuracy="1513"] | Structured Data Element with a non-IANA controlled with 3 parameters timeQuality.tzKnown="1" isSynced="1" syncAccuracy="1513" |
 MSG | node test msg | Log message: node test msg |
 
+### Syslog files
+
+Syslog messages can be saved in a file or forwarded to any other system. Using the configuration file you can define where the data should be saved or forwarded using Syslog facilities and severity.
+
+In the following example we are logging anything (expcept mail, authpriv or cron) of level (severity) info or higher to /var/log/messages:
+
+```
+*.info;mail.none;authpriv.none;cron.none                /var/log/messages
+```
+
+For complete list please review the official [RSyslog documentation](http://www.rsyslog.com/).
+
+
 ## 3. What is Log Analytics Agent
 
 Azure Log Analytics relies on agents to collect data to a Log Analytics Workspace. Azure Sentinel will use the data in a Log Analytics workspace to work with.
@@ -198,9 +217,218 @@ There are many ways in how you can install Log Analytics Agent:
 
 ## 4. Setup Log Analytics agent on Linux (log forward)
 
-By default Log Analytics agent will collect any syslog message and inject in the Log analytics workspace. 
+Before setup the Log Analytics agent you must first setup the Agents configuration under the Log Analytics workspace. All the changes under this section in a Log Analytics workspace will be synced to the Log Analytics agent (OMSAgent). 
 
-## 5. Setup RSyslog
+You can check how it stay in sync by checking crontab settings:
+
+```
+[victor@doccentos ~]$ cat /etc/cron.d/OMSConsistencyInvoker
+5,20,35,50 * * * * omsagent /opt/omi/bin/OMSConsistencyInvoker >/dev/null 2>&1
+[victor@doccentos ~]$
+```
+
+> Note: By default the sync will happen on every 15 minutes in a random start minute.
+
+Go to the desired Log Analytics workspace and enable all the desired facilities:
+![Log Analytics agent config](media/log-analytics-agent-config.png)
+
+In case you have enabled all facilities with all log levels under agent configuration a RSyslog conf file will be created as follow:
+
+```
+[victor@doccentos rsyslog.d]$ cat /etc/rsyslog.d/95-omsagent.conf
+
+# OMS Syslog collection for workspace 0a99cce5-22c5-4a75-a66d-403a47090db8
+auth.=alert;auth.=crit;auth.=debug;auth.=emerg;auth.=err;auth.=info;auth.=notice;auth.=warning  @127.0.0.1:25224
+authpriv.=alert;authpriv.=crit;authpriv.=debug;authpriv.=emerg;authpriv.=err;authpriv.=info;authpriv.=notice;authpriv.=warning        @127.0.0.1:25224
+cron.=alert;cron.=crit;cron.=debug;cron.=emerg;cron.=err;cron.=info;cron.=notice;cron.=warning  @127.0.0.1:25224
+daemon.=alert;daemon.=crit;daemon.=debug;daemon.=emerg;daemon.=err;daemon.=info;daemon.=notice;daemon.=warning        @127.0.0.1:25224
+kern.=alert;kern.=crit;kern.=debug;kern.=emerg;kern.=err;kern.=info;kern.=notice;kern.=warning  @127.0.0.1:25224
+local0.=alert;local0.=crit;local0.=debug;local0.=emerg;local0.=err;local0.=info;local0.=notice;local0.=warning        @127.0.0.1:25224
+local1.=alert;local1.=crit;local1.=debug;local1.=emerg;local1.=err;local1.=info;local1.=notice;local1.=warning        @127.0.0.1:25224
+local2.=alert;local2.=crit;local2.=debug;local2.=emerg;local2.=err;local2.=info;local2.=notice;local2.=warning        @127.0.0.1:25224
+local3.=alert;local3.=crit;local3.=debug;local3.=emerg;local3.=err;local3.=info;local3.=notice;local3.=warning        @127.0.0.1:25224
+local4.=alert;local4.=crit;local4.=debug;local4.=emerg;local4.=err;local4.=info;local4.=notice;local4.=warning        @127.0.0.1:25224
+local5.=alert;local5.=crit;local5.=debug;local5.=emerg;local5.=err;local5.=info;local5.=notice;local5.=warning        @127.0.0.1:25224
+local6.=alert;local6.=crit;local6.=debug;local6.=emerg;local6.=err;local6.=info;local6.=notice;local6.=warning        @127.0.0.1:25224
+local7.=alert;local7.=crit;local7.=debug;local7.=emerg;local7.=err;local7.=info;local7.=notice;local7.=warning        @127.0.0.1:25224
+mail.=alert;mail.=crit;mail.=debug;mail.=emerg;mail.=err;mail.=info;mail.=notice;mail.=warning  @127.0.0.1:25224
+syslog.=alert;syslog.=crit;syslog.=debug;syslog.=emerg;syslog.=err;syslog.=info;syslog.=notice;syslog.=warning        @127.0.0.1:25224
+user.=alert;user.=crit;user.=debug;user.=emerg;user.=err;user.=info;user.=notice;user.=warning  @127.0.0.1:25224
+[victor@doccentos rsyslog.d]$
+```
+
+This configuration file is setting up RSyslog to forward all the selected facilities and log levels to Log Analytics agent (OMSAgent) running in localhost under the port UDP 25224.
+
+>Note: There are some advanced scenarios where Log Analytics Agent (OMSAgent) sync should be stopped to avoid configuration conflicts. You can do it using the following command:
+
+```
+sudo su omsagent -c 'python /opt/microsoft/omsconfig/Scripts/OMS_MetaConfigHelper.py --disable'
+```
+
+> Note: In RSyslog config file a single @ means UDP double @@ means TCP.
+
+
+
+By default Log Analytics agent will collect any syslog message (from the facilities and log levels selected in the Azure Portal) and inject the data in a Log analytics workspace. There is no need to change any setting to make the data from the local server to be injected in a Log Analytics workspace.
+
+At this point you have all you need to collect local Linux Syslog messages from all selected facilities and log levels to Azure Log Analytics Workspace using Log Analytics agent (OMSAgent) and Syslog.
+
+To test that everything is working as expected you can basically use the command logger from a Linux terminal:
+
+```
+logger "Test log from Linux Logger"
+```
+
+You can check the message in Log Analytics workspace using the following query:
+
+```
+Syslog 
+| where TimeGenerated > ago(1h)
+| where SyslogMessage contains "Test log from Linux Logger"
+| order by TimeGenerated
+```
+
+![Kusto Query Test](media/kusto-syslog-test.png)
+
+
+## Configuring RSyslog Forward
+
+By default RSyslog doesn't listen to any TCP/UDP port. To make a Syslog Server become a forwarder server you must load a TCP or UDP module (or both). Here is the changes you must do at /etc/rsyslog.conf to make RSyslog start listening in both 514 TCP and UDP:
+
+```
+# Load UDP module
+module(load="imudp")
+input(type="imudp" port="514")
+
+# Load TCP module
+module(load="imtcp")
+input(type="imtcp" port="514")
+```
+
+These entries must be added (or uncomment) near to the beginning of the config file /etc/rsyslog.conf. Example:
+
+```
+# /etc/rsyslog.conf configuration file for rsyslog
+#
+# For more information install rsyslog-doc and see
+# /usr/share/doc/rsyslog-doc/html/configuration/index.html
+#
+# Default logging rules can be found in /etc/rsyslog.d/50-default.conf
+
+
+#################
+#### MODULES ####
+#################
+
+module(load="imuxsock") # provides support for local system logging
+#module(load="immark")  # provides --MARK-- message capability
+
+# provides UDP syslog reception
+module(load="imudp")
+input(type="imudp" port="514")
+
+# provides TCP syslog reception
+module(load="imtcp")
+input(type="imtcp" port="514")
+
+# provides kernel logging support and enable non-kernel klog messages
+module(load="imklog" permitnonkernelfacility="on")
+
+###########################
+#### GLOBAL DIRECTIVES ####
+###########################
+...
+```
+
+In order for these changes take effect you have to restart RSyslog daemon using the following command:
+
+```
+sudo systemctl restart rsyslog
+sudo systemctl status rsyslog
+```
+
+You can check if your server are receiving messages remote messages using the logger command specifying to send a message to a remote server. From any remote Linux type the following command replacing the IP Address to your Syslog Forwarder server IP:
+
+```
+logger -n 10.0.5.8 -i --msgid "123" "Test log from remote Linux Logger"
+```
+
+Depending on your Linux distribution all Syslog messages will be saved under /var/log/messages (Red-Hat based distributions) or /var/log/syslog (Debian based distributions). You can also check the content of this file to see if you are receiving remote messages using the following command:
+
+```
+tail -f /var/log/messages
+```
+
+> Note: To conform where your Linux distribution is saving the Syslog messages check the configuration file /etc/rsyslog.conf
+
+You can check the message in Log Analytics workspace using the following query:
+
+```
+Syslog 
+| where TimeGenerated > ago(1h)
+| where SyslogMessage contains "Test log from remote Linux Logger"
+| order by TimeGenerated
+```
+
+At this point you have a full functioning Linux RSyslog forwarder server. It's able to receive remote data from network under TCP/UDP 514 port and forward to Log Analytics agent (OMSAgent) under UDP 25224. You can confirm the forward configuration by checking the file that was created by Log Analytics agent (OMSAgent) used to setup RSyslog "/etc/rsyslog.d/95-omsagent.conf".
+
+## 5. Configuring RSyslog to forward  Common Event Format (CEF) messages
+
+# Precisa de validação
+
+O VMSS esta sendo usando somente para CEF forward e não é os dois na mesma maquina CEF e Syslog.
+
+```
+# Load UDP module
+module(load="imudp")
+# Setup the input to listen on 514 UDP and use a ruleset named "forwarddata" to work with the collected data
+input(type="imudp" port="514" ruleset="forwarddata")
+# Load TCP module
+module(load="imtcp")
+# Setup the input to listen on 514 TCP and use a ruleset named "forwarddata" to work with the collected data
+input(type="imtcp" port="514" ruleset="forwarddata")
+```
+
+Now you have to define the ruleset "forwarddata". You must create a file  following content under /etc/rsyslog.d/security-config-omsagent.conf:
+
+```
+ruleset(name="forwarddata"){
+    action(type="omfwd"
+        target="127.0.0.1"
+        port="25226"
+        protocol="tcp"
+        queue.type="fixedArray"
+        queue.dequeueBatchSize="128"
+        queue.workerThreads="5"
+        queue.spoolDirectory="/var/opt/microsoft/linuxmonagent"
+        queue.filename="omsagentqueue"
+        queue.maxdiskspace="5g"
+        queue.size="50000"
+        queue.highwatermark="30000"
+        queue.lowwatermark="25000"
+        queue.saveonshutdown="on"
+        action.resumeretrycount="-1"
+        action.resumeinterval = "3"
+        )
+}
+```
+Precisa revisar ruleset, para ver se funciona com syslog normal assim teria somente ele.
+Caso contrario é preciso criar seguindo o artigo.
+Revisar da forma que faço hoje:
+
+[victor@CentOSSyslog rsyslog.d]$ cat juniper.conf.sample
+template(name="dynaFile" type="string" string="/var/log/remote-syslog/%HOSTNAME%.log")
+#template(name="MYFORMAT" type="string" string="%rawmsg%" )
+#template(name="MYFORMAT" type="string" string="<14>1 2021-02-4T15:21:59.945-05:00 corp-fw RT_FLOW -APPTRACK_SESSION_VOL_UPDATE [junos@2636.1.1.1.2.105 ]%rawmsg:55:$%\n")
+#template(name="MYFORMAT" type="string" string="%rawmsg:55:$%\n" )
+#template(name="addhmac" type="string" string="<%PRI%>1 %TIMESTAMP:::date-rfc3339% %HOSTNAME% %APP-NAME% %PROCID% %MSGID% %STRUCTURED-DATA% %msg%\n")
+template(name="MYFORMAT" type="string" string="%rawmsg-after-pri%\n" )
+if $hostname == 'corp-fw' then {
+        action(type="omfile" dynaFile="dynaFile" template="MYFORMAT")
+        action(type="omfwd" target="127.0.0.1" Port="25224" Protocol="udp" template="MYFORMAT")
+        & stop
+}
+[victor@CentOSSyslog rsyslog.d]$
 
 ## 6. Validate Configuration
 
