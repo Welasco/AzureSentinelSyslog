@@ -518,6 +518,16 @@ For a full understand about FluentD check the [official documentation](https://d
     ```
     This configuration file is checking the content of the syslog message. If it contains "CEF:" or "ASA-" it will forward the data to 127.0.0.1:25226 TCP.
 
+    In order for these changes take effect you have to restart RSyslog daemon and Log Analytics agent (OMSAgent) using the following command:
+
+    ```
+    sudo systemctl restart omsagent-[workspaceID].service
+    sudo systemctl status omsagent-[workspaceID].service
+
+    sudo systemctl restart rsyslog
+    sudo systemctl status rsyslog
+    ```
+
     At this point you have configured the RSyslog to forward all CEF messages to Log Analytics agent under a special filter that are listening under the port 25226 TCP. Any other syslog message will be forwarded to Log Analytics agent under the standard oms.syslog syslog filter using the port 25224 UDP.
 
     You can see how the standard syslog messages gets filtered, parsed and sended to Log Analytics workspace by checking the following files:
@@ -529,6 +539,282 @@ For a full understand about FluentD check the [official documentation](https://d
     ``` 
 
 ## 8. Troubleshooting
+
+Before we start digging into troubleshooting it's important to recap how RSyslog and Log Analytics agent are playing together.
+
+RSyslog will be listening on port 514 TCP/UDP to receive remote syslog messages. All those messages will be saved under one of those two files depending on your Linux distribution:
+
+```
+/var/log/messages (Red-Hat based distributions)
+/var/log/syslog (Debian based distributions)
+```
+
+After the message is received RSyslog will forward the message to Log Analytics agent (OMSAgent) using the port 24224 UDP.
+
+Before going deep in troubleshooting is always a good to start from the basics reviewing all the configuration files.
+
+ - **Network Troubleshooting**
+
+    The first part of the troubleshooting would be a confirmation the server is receiving data by checking log files or network trace.
+
+    You can check if all the services are listening in the right port by running the following command:
+
+    ```
+    [root@CentOSSyslog omsagent.d]# netstat -nap | grep 25
+    udp        0      0 127.0.0.1:25224         0.0.0.0:*                           438229/ruby
+    tcp        0      0 127.0.0.1:25226         0.0.0.0:*               LISTEN      438229/ruby
+    ```
+
+    To send a syslog message to a remote server you can use the command logger:
+
+    ```
+    logger -n 10.0.5.4 -i --msgid "123" "test message"
+    ```
+
+    There are some scenarios where you would like to troubleshoot the format of a syslog message. For those type of scenarios you can use the command nc (Netcat):
+
+    ```
+    echo -n '<14>1 2021-02-10T16:36:59.945-05:00 msft-fw RT_FLOW - APPTRACK_SESSION_VOL_UPDATE [vws12@2636.1.1.1.2.105 source-address="192.168.0.1" source-port="59000" destination-address="13.0.0.9" destination-port="443" service-name="junos-https" application="SSL" nested-application="SHAREPOINT-ONLINE" nat-source-address="64.0.0.5" nat-source-port="33680" nat-destination-address="13.0.0.9" nat-destination-port="443" src-nat-rule-name="rule-27" dst-nat-rule-name="N/A" protocol-id="6" policy-name="VWSA-INTERNET-ACCESS" source-zone-name="TRUST" destination-zone-name="UNTRUST" session-id-32="35684215" packets-from-client="9" bytes-from-client="3045" packets-from-server="12" bytes-from-server="6664" elapsed-time="66" username="N/A" roles="N/A" encrypted="No1asdf"]' | nc -4u -w1 10.0.5.4
+    514
+    ```
+
+    To live check the log files in RSyslog you can use the following command:
+
+    ```
+    tail -f /var/log/messages | grep "[message filter]"
+    ```
+
+    > ***Note:*** Replace [message filter] to a peace of the message you are looking for.
+
+    To live check the network packets you can use the following command:
+
+    ```
+    sudo tcpdump -i eth0 -Xvv port 514 and src 10.0.5.5
+    ```
+
+    > **Note:** This command is capturing all network traffic on port 514 and source IP address 10.0.5.5. It will dump the captured information in the screen.
+
+    The next part is to check if RSyslog is forwarding the messages to Log Analytics agent (OMSAgent) under the port 25224 using local network capture using the following command tcpdump command:
+
+    ```
+    sudo tcpdump -i lo -Xvv port 25224
+    ```
+
+    In case the problem you are troubleshooting is related to CEF messages you can use the following command defining the port 25226:
+
+    ```
+    sudo tcpdump -i lo -nnvvXS port 25226
+    ```
+
+- **SELinux**
+
+    Security-Enhanced Linux (SELinux) is a security architecture for Linux® systems that allows administrators to have more control over who can access the system.
+
+    SELinux defines access controls for the applications, processes, and files on a system. It uses security policies, which are a set of rules that tell SELinux what can or can’t be accessed, to enforce the access allowed by a policy.
+
+    SELinux can block access to any file or socket.
+
+    SELinux is not support with Log Analytics agent (OMSAgent).
+
+    In case you get blocked by SELinux you will see a similar messages under the log file in the first access to Log Analytics agent (OMSAgent) port:
+
+    ```
+    [root@doccentos victor]# tail -f /var/log/audit/audit.log
+    type=AVC msg=audit(1619045288.713:119): avc:  denied  { name_connect } for  pid=1133 comm=72733A6D61696E20513A526567 dest=25226 scontext=system_u:system_r:syslogd_t:s0 tcontext=system_u:object_r:unreserved_port_t:s0 tclass=tcp_socket permissive=0
+    type=SYSCALL msg=audit(1619045288.713:119): arch=c000003e syscall=42 success=no exit=-13 a0=18 a1=7f6268006f70 a2=10 a3=5 items=0 ppid=1 pid=1133 auid=4294967295 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=(none) ses=4294967295 comm=72733A6D61696E20513A526567 exe="/usr/sbin/rsyslogd" subj=system_u:system_r:syslogd_t:s0 key=(null)
+    type=PROCTITLE msg=audit(1619045288.713:119): proctitle=2F7573722F7362696E2F727379736C6F6764002D6E
+    type=AVC msg=audit(1619045288.714:120): avc:  denied  { name_connect } for  pid=1133 comm=72733A6D61696E20513A526567 dest=25226 scontext=system_u:system_r:syslogd_t:s0 tcontext=system_u:object_r:unreserved_port_t:s0 tclass=tcp_socket permissive=0
+    type=SYSCALL msg=audit(1619045288.714:120): arch=c000003e syscall=42 success=no exit=-13 a0=18 a1=7f6268006f70 a2=10 a3=0 items=0 ppid=1 pid=1133 auid=4294967295 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=(none) ses=4294967295 comm=72733A6D61696E20513A526567 exe="/usr/sbin/rsyslogd" subj=system_u:system_r:syslogd_t:s0 key=(null)
+    type=PROCTITLE msg=audit(1619045288.714:120): proctitle=2F7573722F7362696E2F727379736C6F6764002D6E
+    type=AVC msg=audit(1619045288.714:121): avc:  denied  { name_connect } for  pid=1133 comm=72733A6D61696E20513A526567 dest=25226 scontext=system_u:system_r:syslogd_t:s0 tcontext=system_u:object_r:unreserved_port_t:s0 tclass=tcp_socket permissive=0
+    type=SYSCALL msg=audit(1619045288.714:121): arch=c000003e syscall=42 success=no exit=-13 a0=18 a1=7f626804e840 a2=10 a3=5 items=0 ppid=1 pid=1133 auid=4294967295 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=(none) ses=4294967295 comm=72733A6D61696E20513A526567 exe="/usr/sbin/rsyslogd" subj=system_u:system_r:syslogd_t:s0 key=(null)
+    type=PROCTITLE msg=audit(1619045288.714:121): proctitle=2F7573722F7362696E2F727379736C6F6764002D6E
+    type=AVC msg=audit(1619045288.714:122): avc:  denied  { name_connect } for  pid=1133 comm=72733A6D61696E20513A526567 dest=25226 scontext=system_u:system_r:syslogd_t:s0 tcontext=system_u:object_r:unreserved_port_t:s0 tclass=tcp_socket permissive=0
+    type=SYSCALL msg=audit(1619045288.714:122): arch=c000003e syscall=42 success=no exit=-13 a0=18 a1=7f626804e840 a2=10 a3=0 items=0 ppid=1 pid=1133 auid=4294967295 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=(none) ses=4294967295 comm=72733A6D61696E20513A526567 exe="/usr/sbin/rsyslogd" subj=system_u:system_r:syslogd_t:s0 key=(null)
+    type=PROCTITLE msg=audit(1619045288.714:122): proctitle=2F7573722F7362696E2F727379736C6F6764002D6E
+    ```
+
+    ```
+    [victor@doccentos ~]$ sudo tail -f /var/log/messages
+    Apr 21 22:48:08 doccentos rsyslogd: action 'action 17' suspended, next retry is Wed Apr 21 22:48:38 2021 [v8.24.0-57.el7_9 try http://www.rsyslog.com/e/2007 ]    
+    ```
+
+    SELinux is anabled by default on any RedHat based Linux distrubution.
+
+    To check the status of SELinux you use the following command:
+
+    ```
+    [root@doccentos victor]# sestatus
+    SELinux status:                 enabled
+    SELinuxfs mount:                /sys/fs/selinux
+    SELinux root directory:         /etc/selinux
+    Loaded policy name:             targeted
+    Current mode:                   enforcing
+    Mode from config file:          enforcing
+    Policy MLS status:              enabled
+    Policy deny_unknown status:     allowed
+    Max kernel policy version:      31
+    ```
+
+    To temporarily disable SELinux you can use the following command:
+
+    ```
+    [root@doccentos victor]# setenforce 0
+    [root@doccentos victor]# sestatus
+    SELinux status:                 enabled
+    SELinuxfs mount:                /sys/fs/selinux
+    SELinux root directory:         /etc/selinux
+    Loaded policy name:             targeted
+    Current mode:                   permissive
+    Mode from config file:          enforcing
+    Policy MLS status:              enabled
+    Policy deny_unknown status:     allowed
+    Max kernel policy version:      31
+    ```
+
+    To permanently disable SELinux change the configuration file /etc/sysconfig/selinux as follow:
+
+    ```
+    From:
+    SELINUX=enforcing
+
+    To:
+    SELINUX=disabled
+    ```
+
+- **Scenario 1: Messages not showing in the log**
+
+    There are some scenarios where you would like to troubleshoot the format of a syslog message. If a syslog message is not formated following the RFCs there is a big chance the message will be trucated in the log. For those type of scenarios you can use the command nc (Netcat):
+
+    ```
+    echo -n '<14>1 2021-02-10T16:36:59.945-05:00 msft-fw RT_FLOW - APPTRACK_SESSION_VOL_UPDATE [vws12@2636.1.1.1.2.105 source-address="192.168.0.1" source-port="59000" destination-address="13.0.0.9" destination-port="443" service-name="junos-https" application="SSL" nested-application="SHAREPOINT-ONLINE" nat-source-address="64.0.0.5" nat-source-port="33680" nat-destination-address="13.0.0.9" nat-destination-port="443" src-nat-rule-name="rule-27" dst-nat-rule-name="N/A" protocol-id="6" policy-name="VWSA-INTERNET-ACCESS" source-zone-name="TRUST" destination-zone-name="UNTRUST" session-id-32="35684215" packets-from-client="9" bytes-from-client="3045" packets-from-server="12" bytes-from-server="6664" elapsed-time="66" username="N/A" roles="N/A" encrypted="No1asdf"]' | nc -4u -w1 10.0.5.4
+    514
+    ```
+
+    This previous example is a good demonstration of how a simple message may not work with syslog. It looks like any regular message but it's a not valid RFC5424 message. If you test this previous command you will see that entire message was received on network but it was truncated in the log.
+
+    Here is the network output of the previous message:
+
+    ```
+    [victor@CentOSSyslog ~]$ sudo tcpdump -i eth0 -Xvv port 514 and src 10.0.5.5
+    dropped privs to tcpdump
+    tcpdump: listening on eth0, link-type EN10MB (Ethernet), capture size 262144 bytes
+    21:38:46.456876 IP (tos 0x0, ttl 64, id 7384, offset 0, flags [DF], proto UDP (17), length 786)
+        centosclient.internal.cloudapp.net.43903 > centossyslog.internal.cloudapp.net.syslog: [udp sum ok] SYSLOG, length: 758
+            Facility user (1), Severity info (6)
+            Msg: 1 2021-02-10T16:36:59.945-05:00 msft-fw RT_FLOW - APPTRACK_SESSION_VOL_UPDATE [vws12@2636.1.1.1.2.105 source-address="192.168.0.1" source-port="59000" destination-address="13.0.0.9" destination-port="443" service-name="junos-https" application="SSL" nested-application="SHAREPOINT-ONLINE" nat-source-address="64.0.0.5" nat-source-port="33680" nat-destination-address="13.0.0.9" nat-destination-port="443" src-nat-rule-name="rule-27" dst-nat-rule-name="N/A" protocol-id="6" policy-name="VWSA-INTERNET-ACCESS" source-zone-name="TRUST" destination-zone-name="UNTRUST" session-id-32="35684215" packets-from-client="9" bytes-from-client="3045" packets-from-server="12" bytes-from-server="6664" elapsed-time="66" username="N/A" roles="N/A" encrypted="No1asdf"]
+            0x0000:  3c31 343e 3120 3230 3231 2d30 322d 3130
+            0x0010:  5431 363a 3336 3a35 392e 3934 352d 3035
+            0x0020:  3a30 3020 6d73 6674 2d66 7720 5254 5f46
+            0x0030:  4c4f 5720 2d20 4150 5054 5241 434b 5f53
+            0x0040:  4553 5349 4f4e 5f56 4f4c 5f55 5044 4154
+            0x0050:  4520 5b76 7773 3132 4032 3633 362e 312e
+            0x0060:  312e 312e 322e 3130 3520 736f 7572 6365
+            0x0070:  2d61 6464 7265 7373 3d22 3139 322e 3136
+            0x0080:  382e 302e 3122 2073 6f75 7263 652d 706f
+            0x0090:  7274 3d22 3539 3030 3022 2064 6573 7469
+            0x00a0:  6e61 7469 6f6e 2d61 6464 7265 7373 3d22
+            0x00b0:  3133 2e30 2e30 2e39 2220 6465 7374 696e
+            0x00c0:  6174 696f 6e2d 706f 7274 3d22 3434 3322
+            0x00d0:  2073 6572 7669 6365 2d6e 616d 653d 226a
+            0x00e0:  756e 6f73 2d68 7474 7073 2220 6170 706c
+            0x00f0:  6963 6174 696f 6e3d 2253 534c 2220 6e65
+            0x0100:  7374 6564 2d61 7070 6c69 6361 7469 6f6e
+            0x0110:  3d22 5348 4152 4550 4f49 4e54 2d4f 4e4c
+            0x0120:  494e 4522 206e 6174 2d73 6f75 7263 652d
+            0x0130:  6164 6472 6573 733d 2236 342e 302e 302e
+            0x0140:  3522 206e 6174 2d73 6f75 7263 652d 706f
+            0x0150:  7274 3d22 3333 3638 3022 206e 6174 2d64
+            0x0160:  6573 7469 6e61 7469 6f6e 2d61 6464 7265
+            0x0170:  7373 3d22 3133 2e30 2e30 2e39 2220 6e61
+            0x0180:  742d 6465 7374 696e 6174 696f 6e2d 706f
+            0x0190:  7274 3d22 3434 3322 2073 7263 2d6e 6174
+            0x01a0:  2d72 756c 652d 6e61 6d65 3d22 7275 6c65
+            0x01b0:  2d32 3722 2064 7374 2d6e 6174 2d72 756c
+            0x01c0:  652d 6e61 6d65 3d22 4e2f 4122 2070 726f
+            0x01d0:  746f 636f 6c2d 6964 3d22 3622 2070 6f6c
+            0x01e0:  6963 792d 6e61 6d65 3d22 5657 5341 2d49
+            0x01f0:  4e54 4552 4e45 542d 4143 4345 5353 2220
+            0x0200:  736f 7572 6365 2d7a 6f6e 652d 6e61 6d65
+            0x0210:  3d22 5452 5553 5422 2064 6573 7469 6e61
+            0x0220:  7469 6f6e 2d7a 6f6e 652d 6e61 6d65 3d22
+            0x0230:  554e 5452 5553 5422 2073 6573 7369 6f6e
+            0x0240:  2d69 642d 3332 3d22 3335 3638 3432 3135
+            0x0250:  2220 7061 636b 6574 732d 6672 6f6d 2d63
+            0x0260:  6c69 656e 743d 2239 2220 6279 7465 732d
+            0x0270:  6672 6f6d 2d63 6c69 656e 743d 2233 3034
+            0x0280:  3522 2070 6163 6b65 7473 2d66 726f 6d2d
+            0x0290:  7365 7276 6572 3d22 3132 2220 6279 7465
+            0x02a0:  732d 6672 6f6d 2d73 6572 7665 723d 2236
+            0x02b0:  3636 3422 2065 6c61 7073 6564 2d74 696d
+            0x02c0:  653d 2236 3622 2075 7365 726e 616d 653d
+            0x02d0:  224e 2f41 2220 726f 6c65 733d 224e 2f41
+            0x02e0:  2220 656e 6372 7970 7465 643d 224e 6f31
+            0x02f0:  6173 6466 225d
+            0x0000:  4500 0312 1cd8 4000 4011 fcfa 0a00 0505  E.....@.@.......
+            0x0010:  0a00 0504 ab7f 0202 02fe 5cbd 3c31 343e  ..........\.<14>
+            0x0020:  3120 3230 3231 2d30 322d 3130 5431 363a  1.2021-02-10T16:
+            0x0030:  3336 3a35 392e 3934 352d 3035 3a30 3020  36:59.945-05:00.
+            0x0040:  6d73 6674 2d66 7720 5254 5f46 4c4f 5720  msft-fw.RT_FLOW.
+            0x0050:  2d20 4150 5054 5241 434b 5f53 4553 5349  -.APPTRACK_SESSI
+            0x0060:  4f4e 5f56 4f4c 5f55 5044 4154 4520 5b76  ON_VOL_UPDATE.[v
+            0x0070:  7773 3132 4032 3633 362e 312e 312e 312e  ws12@2636.1.1.1.
+            0x0080:  322e 3130 3520 736f 7572 6365 2d61 6464  2.105.source-add
+            0x0090:  7265 7373 3d22 3139 322e 3136 382e 302e  ress="192.168.0.
+            0x00a0:  3122 2073 6f75 7263 652d 706f 7274 3d22  1".source-port="
+            0x00b0:  3539 3030 3022 2064 6573 7469 6e61 7469  59000".destinati
+            0x00c0:  6f6e 2d61 6464 7265 7373 3d22 3133 2e30  on-address="13.0
+            0x00d0:  2e30 2e39 2220 6465 7374 696e 6174 696f  .0.9".destinatio
+            0x00e0:  6e2d 706f 7274 3d22 3434 3322 2073 6572  n-port="443".ser
+            0x00f0:  7669 6365 2d6e 616d 653d 226a 756e 6f73  vice-name="junos
+            0x0100:  2d68 7474 7073 2220 6170 706c 6963 6174  -https".applicat
+            0x0110:  696f 6e3d 2253 534c 2220 6e65 7374 6564  ion="SSL".nested
+            0x0120:  2d61 7070 6c69 6361 7469 6f6e 3d22 5348  -application="SH
+            0x0130:  4152 4550 4f49 4e54 2d4f 4e4c 494e 4522  AREPOINT-ONLINE"
+            0x0140:  206e 6174 2d73 6f75 7263 652d 6164 6472  .nat-source-addr
+            0x0150:  6573 733d 2236 342e 302e 302e 3522 206e  ess="64.0.0.5".n
+            0x0160:  6174 2d73 6f75 7263 652d 706f 7274 3d22  at-source-port="
+            0x0170:  3333 3638 3022 206e 6174 2d64 6573 7469  33680".nat-desti
+            0x0180:  6e61 7469 6f6e 2d61 6464 7265 7373 3d22  nation-address="
+            0x0190:  3133 2e30 2e30 2e39 2220 6e61 742d 6465  13.0.0.9".nat-de
+            0x01a0:  7374 696e 6174 696f 6e2d 706f 7274 3d22  stination-port="
+            0x01b0:  3434 3322 2073 7263 2d6e 6174 2d72 756c  443".src-nat-rul
+            0x01c0:  652d 6e61 6d65 3d22 7275 6c65 2d32 3722  e-name="rule-27"
+            0x01d0:  2064 7374 2d6e 6174 2d72 756c 652d 6e61  .dst-nat-rule-na
+            0x01e0:  6d65 3d22 4e2f 4122 2070 726f 746f 636f  me="N/A".protoco
+            0x01f0:  6c2d 6964 3d22 3622 2070 6f6c 6963 792d  l-id="6".policy-
+            0x0200:  6e61 6d65 3d22 5657 5341 2d49 4e54 4552  name="VWSA-INTER
+            0x0210:  4e45 542d 4143 4345 5353 2220 736f 7572  NET-ACCESS".sour
+            0x0220:  6365 2d7a 6f6e 652d 6e61 6d65 3d22 5452  ce-zone-name="TR
+            0x0230:  5553 5422 2064 6573 7469 6e61 7469 6f6e  UST".destination
+            0x0240:  2d7a 6f6e 652d 6e61 6d65 3d22 554e 5452  -zone-name="UNTR
+            0x0250:  5553 5422 2073 6573 7369 6f6e 2d69 642d  UST".session-id-
+            0x0260:  3332 3d22 3335 3638 3432 3135 2220 7061  32="35684215".pa
+            0x0270:  636b 6574 732d 6672 6f6d 2d63 6c69 656e  ckets-from-clien
+            0x0280:  743d 2239 2220 6279 7465 732d 6672 6f6d  t="9".bytes-from
+            0x0290:  2d63 6c69 656e 743d 2233 3034 3522 2070  -client="3045".p
+            0x02a0:  6163 6b65 7473 2d66 726f 6d2d 7365 7276  ackets-from-serv
+            0x02b0:  6572 3d22 3132 2220 6279 7465 732d 6672  er="12".bytes-fr
+            0x02c0:  6f6d 2d73 6572 7665 723d 2236 3636 3422  om-server="6664"
+            0x02d0:  2065 6c61 7073 6564 2d74 696d 653d 2236  .elapsed-time="6
+            0x02e0:  3622 2075 7365 726e 616d 653d 224e 2f41  6".username="N/A
+            0x02f0:  2220 726f 6c65 733d 224e 2f41 2220 656e  ".roles="N/A".en
+            0x0300:  6372 7970 7465 643d 224e 6f31 6173 6466  crypted="No1asdf
+            0x0310:  225d                                     "]
+    1 packet captured
+    ```
+
+    Here is the log output of the previous message:
+
+    ```
+    [root@CentOSSyslog omsagent.d]# tail -f /var/log/messages
+    Feb 10 16:36:59 msft-fw RT_FLOW
+    ```
+
+    This is a classic scenario where the Log Analytics agent (OMSAgent) would only receive the truncated message. To fix it you have to fix the remote source which is generating (sending the message) to syslog.
+
+
+For a complete list of troubleshooting check the [official documentation](https://docs.microsoft.com/en-us/azure/azure-monitor/agents/agent-linux-troubleshoot).
 
 
 
