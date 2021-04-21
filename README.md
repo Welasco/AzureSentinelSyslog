@@ -813,6 +813,23 @@ Before going deep in troubleshooting is always a good to start from the basics r
 
     This is a classic scenario where the Log Analytics agent (OMSAgent) would only receive the truncated message. To fix it you have to fix the remote source which is generating (sending the message) to syslog.
 
+- **Scenario 2: Troubleshooting CEF messages**
+
+    CEF messages are parsered in a RSyslog configuration file to check if the content of the message has CEF or ASA. If that's the case the message must be forwarded to a special Log Analytics agent listener with some special filters and output.
+
+    To test if a CEF message is going to the right place you can use this command:
+
+    ```
+    echo -n '<14>1 2021-04-19T15:00:22.303078+00:00 msft-fw RT_FLOW 444969 123 [timeQuality tzKnown="1" isSynced="1" syncAccuracy="1513"] CEF:0|appliance|applience central|1.0|Event::Endpoint::WebControlViolation|User bypassed category block to 'https://azeus1-client-s.gateway.messenger.live.com'|1|source_info_ip=192.168.1.7 rt=2020-12-05T08:00:29.022Z end=2020-12-05T07:55:26.000Z duid=5a5cef08b8bcb912fbaede04 endpoint_type=computer endpoint_id=46240012-53fd-437f-96e2-026144bc2012 suser=Test, User group=WEB_Users customer_id=a7ca6904-570d-49de-9252-f6190d32eef3 id=1641dc5d-a4bf-4a10-99d6-2762dd008451 dhost=Host123' | nc -4u -w1 10.0.5.8 514
+    ```
+
+    To make sure this message was forwarded to the right Log Analytics agent (OMSAgent) listener use the following command:
+
+    ```
+    sudo tcpdump -i lo -Xvv port 25226
+    ```
+
+    You should expect to see a network package going to this listener. In case you don't see anything check the RSyslog config file /etc/rsyslog.d/security-config-omsagent.conf or if SELinux is enabled.
 
 For a complete list of troubleshooting check the [official documentation](https://docs.microsoft.com/en-us/azure/azure-monitor/agents/agent-linux-troubleshoot).
 
