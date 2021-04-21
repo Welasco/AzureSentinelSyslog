@@ -446,8 +446,7 @@ For a full understand about FluentD check the [official documentation](https://d
     You can also achieve using the following command line which will copy the entire file from it source:
 
     ```
-    wget -O /etc/opt/microsoft/omsagent/[workspaceID]/conf/omsagent.d/security_events.conf https://raw.githubusercontent.com/microsoft/OMS-Agent-for-Linux/master/installer/conf/
-    omsagent.d/security_events.conf    
+    wget -O /etc/opt/microsoft/omsagent/[workspaceID]/conf/omsagent.d/security_events.conf https://raw.githubusercontent.com/microsoft/OMS-Agent-for-Linux/master/installer/conf/omsagent.d/security_events.conf    
     ```
     > **Note:** Replace [workspaceID] with the desired Log Analytics workspace ID.
 
