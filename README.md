@@ -142,7 +142,7 @@ Azure Log Analytics relies on agents to collect data to a Log Analytics Workspac
 
 The Azure Sentinel agent, which is actually the Log Analytics agent, converts CEF-formatted logs into a format that can be ingested by Log Analytics. The data can also be a regular Syslog message format.
 
-There are many ways in how you can install Log Analytics Agent:
+There are many ways in how you can install Log Analytics Agent (OMSAgent):
 
 - **Azure Portal**
     - You can install (connect) from a Log Analytics Workspace to an Azure VM using using connect option:
@@ -153,7 +153,10 @@ There are many ways in how you can install Log Analytics Agent:
     [Deploy Azure Monitor at scale using Azure Policy](https://docs.microsoft.com/en-us/azure/azure-monitor/deploy-scale#log-analytics-agent)
     - All those options will use a Azure VM Extension to install and setup the agent:
     ![VM Extension](media/vm-extension.png)
-- **Manual instalation**
+
+    > **Note**: In case you have a Azure Policy or Azure Security Center installation option enabled and you want to install the Log Analytics Agent Manually (Using wrapper script or from downloaded files) you have to first isolate (disable the policy) to the target server and make sure there are no Log Analytics agent (OMSAgent) extension installed. In case it was already installed from Azure VM extension you to uninstall it first.
+
+- **Manual installation**
     - Install the agent using wrapper script:
     
         To configure the Linux computer to connect to a Log Analytics workspace, run the following command providing the workspace ID and primary key. The following command downloads the agent, validates its checksum, and installs it.
@@ -217,7 +220,7 @@ There are many ways in how you can install Log Analytics Agent:
 
 ## 4. Setup Log Analytics agent on Linux (log forward)
 
-Before setup the Log Analytics agent you must first setup the Agents configuration under the Log Analytics workspace. All the changes under this section in a Log Analytics workspace will be synced to the Log Analytics agent (OMSAgent). 
+Before setup the Log Analytics agent you must first setup the Agents configuration under the Log Analytics workspace. All the changes under this section in a Log Analytics workspace will be synced to the Log Analytics agent (OMSAgent).
 
 You can check how it stay in sync by checking crontab settings:
 
@@ -372,9 +375,172 @@ Syslog
 
 At this point you have a full functioning Linux RSyslog forwarder server. It's able to receive remote data from network under TCP/UDP 514 port and forward to Log Analytics agent (OMSAgent) under UDP 25224. You can confirm the forward configuration by checking the file that was created by Log Analytics agent (OMSAgent) used to setup RSyslog "/etc/rsyslog.d/95-omsagent.conf".
 
-## 6. Configuring RSyslog to forward  Common Event Format (CEF) messages
+## 6. Log Analytics agent (OMSAgent) and FluentD
+
+The [Log Analytics Agent (OMSAgent)](https://github.com/Microsoft/OMS-Agent-for-Linux) is based on [FluentD](https://docs.fluentd.org/). Fluentd is an open-source data collector for a unified logging layer. Fluentd allows you to unify data collection and consumption for better use and understanding of data.
+
+FluentD has a concept of plugins like Input Plugins, Output Plugins, Filter Plugins, Parser Plugins, Formatter Plugins and many others.
+
+- Input Plugins, uses a source block to specify a plugin to be used and all the specifics about it. There are many Input Plugins available you can check them [here](https://docs.fluentd.org/input):
+    ```
+    <source>
+        @type syslog
+        port 5140
+        bind 0.0.0.0
+        tag syslog-data
+    </source>
+    ```
+- Output Plugins, uses a match block which will use the tag from the Input Plugin (source block) to define what to do with the data. There are also many Output Plugins available you can check them [here](https://docs.fluentd.org/output).
+    ```
+    <match syslog-data>
+        @type file
+        path /var/log/fluent/myapp
+        compress gzip
+        <buffer>
+            timekey 1d
+            timekey_use_utc true
+            timekey_wait 10m
+        </buffer>
+    </match>
+    ```
+The main purpose for those plugins are to make FluentD extremely customizable. You can also write your own plugin to for example export the data to a specific database.
+
+With this concept in mind that's how Log Analytics agent (OMSAgent) leverage from FluentD to receive logs (Input Plugin) and forward them to Log Analytics workspace (Output Plugin).
+
+For a full understand about FluentD check the [official documentation](https://docs.fluentd.org/).
+
+## 7. Configuring RSyslog and Log Analytics agent to forward  Common Event Format (CEF) messages
+
+- **Log Analytics agent (OMSAgent)**
+
+    To configure the Log Analytics agent (OMSAgent) for CEF is necessary to create a new configuration file  with the following content:
+
+    ```
+    <source>
+        type syslog
+        port 25226
+        bind 127.0.0.1
+        protocol_type tcp
+        tag oms.security
+        format /(?<time>(?:\w+ +){2,3}(?:\d+:){2}\d+|\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.[\w\-\:\+]{3,12}):?\s*(?:(?<host>[^: ]+) ?:?)?\s*(?<ident>.*CEF.+?(?=0\|)|%ASA[0-9\-]{8,10})\s*:?(?<message>0\|.*|.*)/
+        <parse>
+            message_format auto
+        </parse>
+    </source>
+
+    <filter oms.security.**>
+        type filter_syslog_security
+    </filter>
+    ```
+
+    This file must be saved using the following path:
+
+    ```
+    /etc/opt/microsoft/omsagent/[workspaceID]/conf/omsagent.d/security_events.conf
+    ```
+
+    > **Note:** Replace [workspaceID] with the desired Log Analytics workspace ID.
+
+    You can also achieve using the following command line which will copy the entire file from it source:
+
+    ```
+    wget -O /etc/opt/microsoft/omsagent/[workspaceID]/conf/omsagent.d/security_events.conf
+    https://raw.githubusercontent.com/microsoft/OMS-Agent-for-Linux/master/installer/conf/
+    omsagent.d/security_events.conf    
+    ```
+    > **Note:** Replace [workspaceID] with the desired Log Analytics workspace ID.
+
+    This file is configuring Log Analytics agent (OMSAgent) using a FluentD Input Plugin. It's based in [syslog Input Plugin](https:/docs.fluentd.org/input/syslog) and it's been configured as follow:
+        
+    - Listen on TCP port 25226 and binding to localhost onlye "127.0.0.1"
+    - Tag all input data with "oms.security" tag
+    - Format the data using format section to CEF/ASA with a regular expression
+
+    It's also filtering the data using a special filter named filter_syslog_security. For a deeper understanding you can access this filter at:
+
+    ```
+    /opt/microsoft/omsagent/plugin/filter_syslog_security.rb
+    ```
+
+    > **Note:** FluentD is written in Ruby. You can open most of the plugins using any text editor.
+
+    For any Input Plugin there must be an Output Plugin. It means if you would like to check how the collected data gets injected in Log Analytics Workspace you can find the matching Output Plugin opening the main config file at:
+
+    ```
+    /etc/opt/microsoft/omsagent/[workspaceID]/conf/omsagent.conf
+    ```
+
+    You will find this matching Output Plugin:
+
+    ```
+    <match oms.** docker.**>
+        type out_oms
+        log_level info
+        num_threads 5
+        run_in_background false
+
+        omsadmin_conf_path /etc/opt/microsoft/omsagent/0a99cce5-22c5-4a75-a66d-403a47090db8/conf/omsadmin.c$  cert_path /etc/opt/microsoft/omsagent/0a99cce5-22c5-4a75-a66d-403a47090db8/certs/oms.crt
+        key_path /etc/opt/microsoft/omsagent/0a99cce5-22c5-4a75-a66d-403a47090db8/certs/oms.key
+
+        buffer_chunk_limit 15m
+        buffer_type file
+        buffer_path /var/opt/microsoft/omsagent/0a99cce5-22c5-4a75-a66d-403a47090db8/state/out_oms_common*.$
+
+        buffer_queue_limit 10
+        buffer_queue_full_action drop_oldest_chunk
+        flush_interval 20s
+        retry_limit 6
+        retry_wait 30s
+        max_retry_wait 30m
+    </match>
+    ```
+
+    This is a special Output Plugin named out_oms. For a deeper understanding you can access this Output Plugin at:
+
+    ```
+    /opt/microsoft/omsagent/plugin/out_oms.rb
+    ```
+
+    At this point after save the configuration file you have Log Analytics agent (OMSAgent) listening on TCP port 25226 waiting to receive data from RSyslog.
+    
+- **RSyslog**
+
+    To configure the RSyslog to start forwarding CEF/ASA messages to Log Analytics agent (TCP 25226) is necessary to create a new configuration file  with the following content:
+
+    ```
+    if $rawmsg contains "CEF:" or $rawmsg contains "ASA-" then @@127.0.0.1:25226
+    ```
+
+    This file must be saved using the following path:
+
+    ```
+    /etc/rsyslog.d/security-config-omsagent.conf
+    ```
+    This configuration file is checking the content of the syslog message. If it contains "CEF:" or "ASA-" it will forward the data to 127.0.0.1:25226 TCP.
+
+    At this point you have configured the RSyslog to forward all CEF messages to Log Analytics agent under a special filter that are listening under the port 25226 TCP. Any other syslog message will be forwarded to Log Analytics agent under the standard oms.syslog syslog filter using the port 25224 UDP.
+
+    You can see how the standard syslog messages gets filtered, parsed and sended to Log Analytics workspace by checking the following files:
+
+    ```
+    /etc/opt/microsoft/omsagent/[workspaceID]/conf/omsagent.d/syslog.conf
+    /opt/microsoft/omsagent/plugin/filter_syslog.rb
+    /opt/microsoft/omsagent/plugin/out_oms.rb
+    ``` 
+
+## 7. Troubleshooting
+
+
+
+
+
+
+
+
+# Draft -- will be removed
 
 # Precisa de validação
+Revisar titulos
 
 O VMSS esta sendo usando somente para CEF forward e não é os dois na mesma maquina CEF e Syslog.
 
@@ -412,6 +578,8 @@ ruleset(name="forwarddata"){
         )
 }
 ```
+
+
 Precisa revisar ruleset, para ver se funciona com syslog normal assim teria somente ele.
 Caso contrario é preciso criar seguindo o artigo.
 Revisar da forma que faço hoje:
@@ -429,8 +597,3 @@ if $hostname == 'corp-fw' then {
         & stop
 }
 [victor@CentOSSyslog rsyslog.d]$
-
-## 7. Troubleshooting
-
-
-
