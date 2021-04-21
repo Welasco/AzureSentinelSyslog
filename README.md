@@ -11,7 +11,7 @@ Table of Contents
 1. [Configuring RSyslog to receive messages from Network](https://github.com/Welasco/AzureSentinelSyslog#5-configuring-rsyslog-to-receive-messages-from-network)
 1. [Log Analytics agent (OMSAgent) and FluentD](https://github.com/Welasco/AzureSentinelSyslog#6-log-analytics-agent-omsagent-and-fluentd)
 1. [Configuring RSyslog and Log Analytics agent to forward Common Event Format (CEF) messages](https://github.com/Welasco/AzureSentinelSyslog#7-configuring-rsyslog-and-log-analytics-agent-to-forward--common-event-format-cef-messages)
-1. [Troubleshooting](https://github.com/Welasco/AzureSentinelSyslog#5-troubleshooting)
+1. [Troubleshooting](https://github.com/Welasco/AzureSentinelSyslog#8-troubleshooting)
 
 ## 1. Introduction
 
