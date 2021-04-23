@@ -501,6 +501,8 @@ For a full understand about FluentD check the [official documentation](https://d
     /opt/microsoft/omsagent/plugin/out_oms.rb
     ```
 
+    All CEF messages will be sent to **CommonSecurityLog** table under the Log Analytics wokspace.
+
     At this point after save the configuration file you have Log Analytics agent (OMSAgent) listening on TCP port 25226 waiting to receive data from RSyslog.
     
 - **RSyslog**
@@ -527,6 +529,22 @@ For a full understand about FluentD check the [official documentation](https://d
     sudo systemctl restart rsyslog
     sudo systemctl status rsyslog
     ```
+
+    To test if all CEF messages are going to the write table you can send a sample massage using the following command:
+
+    ```
+    logger -p local4.warn -t CEF: "0|appliance|applience central|1.0|Event::Endpoint::WebControlViolation|User bypassed category block to 'https://azeus1-client-s.gateway.messenger.live.com'|1|source_info_ip=192.168.1.7 rt=2020-12-05T08:00:29.022Z end=2020-12-05T07:55:26.000Z duid=5a5cef08b8bcb912fbaede04 endpoint_type=computer endpoint_id=46240012-53fd-437f-96e2-026144bc2012 suser=Test, User group=WEB_Users customer_id=a7ca6904-570d-49de-9252-f6190d32eef3 id=1641dc5d-a4bf-4a10-99d6-2762dd008451 dhost=luti-test11" -P 514 -n 127.0.0.1    
+    ```
+
+    You can check the message in Log Analytics workspace using the following query:
+
+    ```
+    CommonSecurityLog 
+    | where TimeGenerated > ago(1h)
+    | order by TimeGenerated
+    ```
+
+    ![Kusto Query CEF Test](media/kusto-cef-test.png)
 
     At this point you have configured the RSyslog to forward all CEF messages to Log Analytics agent under a special filter that are listening under the port 25226 TCP. Any other syslog message will be forwarded to Log Analytics agent under the standard oms.syslog syslog filter using the port 25224 UDP.
 
@@ -820,7 +838,7 @@ Before going deep in troubleshooting is always a good to start from the basics r
     To test if a CEF message is going to the right place you can use this command:
 
     ```
-    echo -n '<14>1 2021-04-19T15:00:22.303078+00:00 msft-fw RT_FLOW 444969 123 [timeQuality tzKnown="1" isSynced="1" syncAccuracy="1513"] CEF:0|appliance|applience central|1.0|Event::Endpoint::WebControlViolation|User bypassed category block to 'https://azeus1-client-s.gateway.messenger.live.com'|1|source_info_ip=192.168.1.7 rt=2020-12-05T08:00:29.022Z end=2020-12-05T07:55:26.000Z duid=5a5cef08b8bcb912fbaede04 endpoint_type=computer endpoint_id=46240012-53fd-437f-96e2-026144bc2012 suser=Test, User group=WEB_Users customer_id=a7ca6904-570d-49de-9252-f6190d32eef3 id=1641dc5d-a4bf-4a10-99d6-2762dd008451 dhost=Host123' | nc -4u -w1 10.0.5.8 514
+    logger -p local4.warn -t CEF: "0|appliance|applience central|1.0|Event::Endpoint::WebControlViolation|User bypassed category block to 'https://azeus1-client-s.gateway.messenger.live.com'|1|source_info_ip=192.168.1.7 rt=2020-12-05T08:00:29.022Z end=2020-12-05T07:55:26.000Z duid=5a5cef08b8bcb912fbaede04 endpoint_type=computer endpoint_id=46240012-53fd-437f-96e2-026144bc2012 suser=Test, User group=WEB_Users customer_id=a7ca6904-570d-49de-9252-f6190d32eef3 id=1641dc5d-a4bf-4a10-99d6-2762dd008451 dhost=luti-test11" -P 514 -n 127.0.0.1
     ```
 
     To make sure this message was forwarded to the right Log Analytics agent (OMSAgent) listener use the following command:
@@ -830,6 +848,122 @@ Before going deep in troubleshooting is always a good to start from the basics r
     ```
 
     You should expect to see a network package going to this listener. In case you don't see anything check the RSyslog config file /etc/rsyslog.d/security-config-omsagent.conf or if SELinux is enabled.
+
+- **Scenario 3: Invalid CEF Message**
+
+    FluentD allows for plugin-specific logging levels allowing you to specify different log levels for inputs and outputs. To specify a different log level for OMS output, edit the general agent configuration at /etc/opt/microsoft/omsagent/<workspace id>/conf/omsagent.conf.
+
+    In case any appliance are sending an invalid CEF message you can catch the problem by increasing the OMS output plugin.
+
+    In the OMS output plugin, before the end of the configuration file, change the log_level property from info to debug:
+
+    ```
+    <match oms.** docker.**>
+        type out_oms
+        log_level debug
+        num_threads 5
+        buffer_chunk_limit 5m
+        buffer_type file
+        buffer_path /var/opt/microsoft/omsagent/<workspace id>/state/out_oms*.buffer
+        buffer_queue_limit 10
+        flush_interval 20s
+        retry_limit 10
+        retry_wait 30s
+    </match>
+    ```
+
+    You have to restart the service for the changes take effect using the following command:
+
+    ```
+    sudo systemctl restart omsagent-[workspaceID].service
+    sudo systemctl status omsagent-[workspaceID].service
+    ```
+
+    In case any applience send an invalid massage like the example bellow you will be able to catch the problem checking the Log Analytcs agent (OMSAgent) log.
+
+    Sample of message coming from an appliance that cannot be recognized:
+
+    ```
+    echo -n '<14>1 2021-04-19T15:00:22.303078+00:00 msft-fw RT_FLOW 444969 123 [timeQuality tzKnown="1" isSynced="1" syncAccuracy="1513"] CEF:0|appliance|applience central|1.0|Event::Endpoint::WebControlViolation|User bypassed category block to 'https://azeus1-client-s.gateway.messenger.live.com'|1|source_info_ip=192.168.1.7 rt=2020-12-05T08:00:29.022Z end=2020-12-05T07:55:26.000Z duid=5a5cef08b8bcb912fbaede04 endpoint_type=computer endpoint_id=46240012-53fd-437f-96e2-026144bc2012 suser=Test, User group=WEB_Users customer_id=a7ca6904-570d-49de-9252-f6190d32eef3 id=1641dc5d-a4bf-4a10-99d6-2762dd008451 dhost=Host123' | nc -4u -w1 10.0.5.8 514
+    ```
+
+    Expected log entries in /var/opt/microsoft/omsagent/log/omsagent.log:
+
+    ```
+    2021-04-23 14:24:13 +0000 [error]: Unable to resolve the IP of 'msft-fw': no address for msft-fw
+    2021-04-23 14:24:13 +0000 [warn]: Failed to get the IP for msft-fw.
+    ```
+
+    Instead of using the OMS output plugin you can also output data items directly to stdout, which is visible in the Log Analytics agent for Linux log file.
+
+    In the Log Analytics general agent configuration file at /etc/opt/microsoft/omsagent/<workspace id>/conf/omsagent.conf, comment out the OMS output plugin by adding a # in front of each line:
+
+    ```
+    #<match oms.** docker.**>
+    #  type out_oms
+    #  log_level info
+    #  num_threads 5
+    #  buffer_chunk_limit 5m
+    #  buffer_type file
+    #  buffer_path /var/opt/microsoft/omsagent/<workspace id>/state/out_oms*.buffer
+    #  buffer_queue_limit 10
+    #  flush_interval 20s
+    #  retry_limit 10
+    #  retry_wait 30s
+    #</match>
+    ```
+
+    At the end of the configuration file, uncomment the following section by removing the # in front of each line:
+
+    ```
+    <match **>
+        type stdout
+    </match>
+    ```
+
+    ### This is for reference only probably unecessary
+
+    In case would be troubleshooting a problem that you need to check how messages looks like before it get send to Log Analytics workspace you can change the output plugin out_oms.rb (source code file) to add the messages to the log file.
+
+    > Note: As mention Log Analytics agent is based in FluentD. All plugins are written in Ruby. You should only do those modifications if you feel extremily confirtable with the language. Any modification under this file is not supported.
+
+    By adding these two line in the code you will have the full record that's been send to the Log Analytics workspace in the log file.
+
+    ```
+    @log.debug "Trace Log: OMS: #{OMS::Configuration.ods_endpoint.path} ExtraHeaders: #{extra_headers}"
+    @log.debug "Trace Log: Record: #{record}"
+    ```
+
+    ```Ruby
+    ...
+    def handle_record(key, record)
+      @log.trace "Handling record : #{key}"
+      extra_headers = {
+        OMS::CaseSensitiveString.new('x-ms-client-request-retry-count') => "#{@num_errors}"
+      }
+      req = OMS::Common.create_ods_request(OMS::Configuration.ods_endpoint.path, record, @compress, extra_headers)
+      unless req.nil?
+        http = OMS::Common.create_ods_http(OMS::Configuration.ods_endpoint, @proxy_config)
+        start = Time.now
+        # This method will raise on failure alerting the engine to retry sending this data
+        OMS::Common.start_request(req, http)
+        ends = Time.now
+        time = ends - start
+        count = record.has_key?('DataItems') ? record['DataItems'].size : 1
+        @log.debug "Trace Log: OMS: #{OMS::Configuration.ods_endpoint.path} ExtraHeaders: #{extra_headers}"
+        @log.debug "Trace Log: Record: #{record}"
+        @log.debug "Success sending #{key} x #{count} in #{time.round(2)}s"
+        write_status_file("true","Sending success")
+        return OMS::Telemetry.push_qos_event(OMS::SEND_BATCH, "true", "", key, record, count, time)
+      end
+    ...
+    ```
+
+    The log files are under the following path:
+
+    ```
+    /var/opt/microsoft/omsagent/log
+    ```
 
 For a complete list of troubleshooting check the [official documentation](https://docs.microsoft.com/en-us/azure/azure-monitor/agents/agent-linux-troubleshoot).
 
@@ -842,10 +976,7 @@ For a complete list of troubleshooting check the [official documentation](https:
 
 # Draft -- will be removed
 
-# Precisa de validação
-Revisar titulos
-
-O VMSS esta sendo usando somente para CEF forward e não é os dois na mesma maquina CEF e Syslog.
+# Need to be reviewed
 
 ```
 # Load UDP module
