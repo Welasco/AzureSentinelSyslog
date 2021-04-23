@@ -894,6 +894,13 @@ Before going deep in troubleshooting is always a good to start from the basics r
     2021-04-23 14:24:13 +0000 [warn]: Failed to get the IP for msft-fw.
     ```
 
+
+    The log files are under the following path:
+
+    ```
+    /var/opt/microsoft/omsagent/log
+    ```
+
     Instead of using the OMS output plugin you can also output data items directly to stdout, which is visible in the Log Analytics agent for Linux log file.
 
     In the Log Analytics general agent configuration file at /etc/opt/microsoft/omsagent/<workspace id>/conf/omsagent.conf, comment out the OMS output plugin by adding a # in front of each line:
@@ -959,11 +966,6 @@ Before going deep in troubleshooting is always a good to start from the basics r
     ...
     ```
 
-    The log files are under the following path:
-
-    ```
-    /var/opt/microsoft/omsagent/log
-    ```
 
 For a complete list of troubleshooting check the [official documentation](https://docs.microsoft.com/en-us/azure/azure-monitor/agents/agent-linux-troubleshoot).
 
