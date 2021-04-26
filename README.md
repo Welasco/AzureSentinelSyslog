@@ -33,9 +33,9 @@ You can host the Syslog forwarder server either On-Prem or in Azure VM:
 
 ## 2. What is Syslog?
 
-Syslog stands for System Logging Protocol and is a standard protocol used to send system log or event messages to a specific server, called a syslog server. It is primarily used to collect various device logs from several different machines in a central location for monitoring and review.
+Syslog stands for System Logging Protocol and is a standard protocol used to send system log or event messages to a specific server. It is commonly used to collect various device logs from several different clients in a central location for monitoring and review.
 
-Syslog is defined in RFC 5424, The Syslog Protocol, which obsoleted the previous RFC 3164:
+Current RFC for Syslog is RFC 5424 which retired the RFC 3164:
 
  - [The Syslog Protocol - RFC5424](https://datatracker.ietf.org/doc/rfc5424/)
  - [The Syslog Protocol - **obsolete** RFC3164](https://datatracker.ietf.org/doc/rfc3164/)
@@ -44,14 +44,14 @@ Currently Syslog has two main implementations RSyslog and Syslog-NG.
  - Syslog-NG (1998)
  - RSyslog (2004)
 
-This article will be based in RSyslog.
+**This article will be based in RSyslog.**
 
 ### Facility
 
-In short, a facility level is used to determine the program or part of the system that produced the logs.
-By default, some parts of your system are given facility levels such as the kernel using the kern facility, or your mailing system using the mail facility.
-If a third-party wants to issue a log, it would probably a reserved set of facility levels from 16 to 23 called “local use” facility levels.
-Alternatively, they can use the “user-level” facility, meaning that they would issue logs related to the user that issued the commands.
+A facility code is used to specify the type of program that is logging the message. Messages with different facilities may be handled differently.
+Some parts of the system are given facility levels such as the kernel using the kern facility, or your SSH system using the auth facility to log users login.
+Third-party will use a reserved set of facility levels from 16 to 23 called "local use" facility levels.
+They can also use  the “user-level” facility, to log related entries as the user that issued the event.
 
 | **Facility Number** | **Keyword** | **Facility Description** |
 | --- | --- | --- |
@@ -82,7 +82,8 @@ Alternatively, they can use the “user-level” facility, meaning that they wou
 
 ### Severity
 
-The Severity is one of the following keywords, in ascending order: debug, info, notice, warning, warn
+The usage of each severity is up to the application to describe usability of each one of them.
+It categorized in a ascending order: debug, info, notice, warning, warn
 (same as warning), err, error (same as err), crit, alert, emerg, panic (same as emerg).
 
 | **Numerical Code** | **Keyword** | **Severity Description** |
@@ -100,12 +101,16 @@ The Severity is one of the following keywords, in ascending order: debug, info, 
 
 The two values are combined to produce a Priority Value sent with the message. The Priority Value is calculated by multiplying the Facility value by eight and then adding the Severity Value to the result. The lower the PRI, the higher the priority.
 
+The Priority value is calculated by first multiplying the Facility number by 8 and then adding the numerical value of the Severity.  The lower the PRI, the higher the priority.
+
 ```
 (Facility Value * 8) + Severity Value = PRI
 ```
 
-In this way, a kernel message receives lower value (higher priority) than a log alert, regardless of the severity of the log alert. Additional identifiers in the packet include the hostname, IP address, process ID, app name, and timestamp of the message.
-The actual verbiage or content of the syslog message is not defined by the protocol. Some messages are simple, readable text, others may only be machine readable.
+For example, a kernel message (Facility=0) with a Severity of Emergency (Severity=0) would have a Priority value of 0.  Also, a "local use 4" message (Facility=20) with a Severity of Notice (Severity=5) would have a Priority value of 165.
+
+Following this logic a kernel message receives lower value (higher priority) than a log alert, regardless of the severity of the log alert.
+
 ```
 Facility syslog (5), Severity alert (1)
 Msg: 1 2021-04-19T15:00:22.303078+00:00 CentOSClient node 444969 123 [timeQuality tzKnown="1" isSynced="1" syncAccuracy="1513"] node test msg
