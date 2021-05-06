@@ -19,7 +19,7 @@ Azure Sentinel can be connected via an agent to any other data source that can p
 
 Most appliances use the Syslog protocol to send event messages that include the log itself and data about the log. The format of the logs varies, but most appliances support CEF-based formatting for log data.
 
-The Azure Sentinel agent, which is actually the Log Analytics agent, converts CEF-formatted logs into a format that can be ingested by Log Analytics. Depending on the appliance type, the agent is installed either directly on the appliance, or on a dedicated Linux-based log forwarder. The agent for Linux receives events from the Syslog daemon over UDP, but if a Linux machine is expected to collect a high volume of Syslog events, they are sent over TCP from the Syslog daemon to the agent and from there to Log Analytics.
+The Log Analytics agent (sometimes referred to as the Operations Management Suite Agent for Linux (or "OMSAgent"), which is used by Azure Sentinel to collect data for connected machines, converts CEF-formatted logs into a format that can be ingested by Log Analytics. Depending on the appliance type, the agent is installed either directly on the appliance, or on a dedicated Linux-based log forwarder. The agent for Linux receives events from the Syslog daemon over UDP, but if a Linux machine is expected to collect a high volume of Syslog events, they are sent over TCP from the Syslog daemon to the agent and from there to Log Analytics.
 
 Here is a diagram of how it works:
 
@@ -35,16 +35,16 @@ You can host the Syslog forwarder server either On-Prem or in Azure VM:
 
 Syslog stands for System Logging Protocol and is a standard protocol used to send system log or event messages to a specific server. It is commonly used to collect various device logs from several different clients in a central location for monitoring and review.
 
-Current RFC for Syslog is RFC 5424 which retired the RFC 3164:
+The current RFC for Syslog is RFC 5424 (which replaced the now retired RFC 3164):
 
  - [The Syslog Protocol - RFC5424](https://datatracker.ietf.org/doc/rfc5424/)
  - [The Syslog Protocol - **obsolete** RFC3164](https://datatracker.ietf.org/doc/rfc3164/)
 
-Currently Syslog has two main implementations RSyslog and Syslog-NG.
+Currently, Syslog has two main implementations:
  - Syslog-NG (1998)
  - RSyslog (2004)
 
-**This article will be based in RSyslog.**
+This article is based on the RSylog implementation.
 
 ### Facility
 
@@ -83,8 +83,7 @@ They can also use  the “user-level” facility, to log related entries as the 
 ### Severity
 
 The usage of each severity is up to the application to describe usability of each one of them.
-It categorized in a ascending order: debug, info, notice, warning, warn
-(same as warning), err, error (same as err), crit, alert, emerg, panic (same as emerg).
+It is categorized in ascending order: debug, info, notice, warning, warn (same as warning), err, error (same as err), crit, alert, emerg, panic (same as emerg).
 
 | **Numerical Code** | **Keyword** | **Severity Description** |
 | --- | --- | --- |
@@ -99,7 +98,7 @@ It categorized in a ascending order: debug, info, notice, warning, warn
 
 ### Syslog message format
 
-The two values are combined to produce a Priority Value sent with the message. The Priority Value is calculated by multiplying the Facility value by eight and then adding the Severity Value to the result. The lower the PRI, the higher the priority.
+The two values (Facility and Severity) are combined to produce a Priority Value (PRI) that is sent with each message. The Priority Value is calculated by multiplying the Facility value by eight and then adding the Severity Value to the result. The lower the PRI, the higher the priority.
 
 The Priority value is calculated by first multiplying the Facility number by 8 and then adding the numerical value of the Severity.  The lower the PRI, the higher the priority.
 
@@ -134,7 +133,7 @@ MSG | node test msg | Log message: node test msg |
 
 Syslog messages can be saved in a file or forwarded to any other system. Using the configuration file you can define where the data should be saved or forwarded using Syslog facilities and severity.
 
-In the following example we are logging anything (expcept mail, authpriv or cron) of level (severity) info or higher to /var/log/messages:
+In the following example we will log all (except mail, authpriv or cron) messages with a severity of info or higher to /var/log/messages:
 
 ```
 *.info;mail.none;authpriv.none;cron.none                /var/log/messages
@@ -145,9 +144,11 @@ For complete list please review the official [RSyslog documentation](http://www.
 
 ## 3. What is Log Analytics Agent
 
-Azure Log Analytics relies on agents to collect data to a Log Analytics Workspace. Azure Sentinel will use the data in a Log Analytics workspace to work with.
+Azure Log Analytics relies on agents to collect data to a Log Analytics Workspace. Azure Sentinel uses the data collected in a Log Analytics workspace.
 
 The Azure Sentinel agent, which is actually the Log Analytics agent, converts CEF-formatted logs into a format that can be ingested by Log Analytics. The data can also be a regular Syslog message format.
+
+The Log Analytics agent (sometimes referred to as the Operations Management Suite Agent for Linux (or "OMSAgent"), which is used by Azure Sentinel to collect data for connected machines, converts CEF-formatted logs into a format that can be ingested by Log Analytics. The data can also be a regular Syslog message format.
 
 There are many ways in how you can install Log Analytics Agent (OMSAgent):
 
@@ -166,7 +167,7 @@ There are many ways in how you can install Log Analytics Agent (OMSAgent):
 - **Manual installation**
     - Install the agent using wrapper script:
     
-        To configure the Linux computer to connect to a Log Analytics workspace, run the following command providing the workspace ID and primary key. The following command downloads the agent, validates its checksum, and installs it.
+        To configure the Linux computer to connect to a Log Analytics workspace (the command will download the agent, validate the checksum and install it) run the following command providing the workspace ID and primary key.
         ```
         wget https://raw.githubusercontent.com/Microsoft/OMS-Agent-for-Linux/master/installer/scripts/onboard_agent.sh && sh onboard_agent.sh -w <YOUR WORKSPACE ID> -s <YOUR WORKSPACE PRIMARY KEY>
         ```
@@ -227,7 +228,7 @@ There are many ways in how you can install Log Analytics Agent (OMSAgent):
 
 ## 4. Setup Log Analytics agent on Linux (log forward)
 
-Before setup the Log Analytics agent you must first setup the Agents configuration under the Log Analytics workspace. All the changes under this section in a Log Analytics workspace will be synced to the Log Analytics agent (OMSAgent).
+Before setting up the Log Analytics agent you must first setup the Agents configuration under the Log Analytics workspace.
 
 You can check how it stay in sync by checking crontab settings:
 
@@ -242,7 +243,7 @@ You can check how it stay in sync by checking crontab settings:
 Go to the desired Log Analytics workspace and enable all the desired facilities:
 ![Log Analytics agent config](media/log-analytics-agent-config.png)
 
-In case you have enabled all facilities with all log levels under agent configuration a RSyslog conf file will be created as follow:
+If you have enabled all facilities with all log levels under agent configuration a RSyslog conf file will be created as follow:
 
 ```
 [victor@doccentos rsyslog.d]$ cat /etc/rsyslog.d/95-omsagent.conf
@@ -277,13 +278,11 @@ sudo su omsagent -c 'python /opt/microsoft/omsconfig/Scripts/OMS_MetaConfigHelpe
 
 > Note: In RSyslog config file a single @ means UDP double @@ means TCP.
 
-
-
-By default Log Analytics agent will collect any syslog message (from the facilities and log levels selected in the Azure Portal) and inject the data in a Log analytics workspace. There is no need to change any setting to make the data from the local server to be injected in a Log Analytics workspace.
+By default the Log Analytics agent will collect any syslog message (from the facilities and log levels selected in the Azure Portal) and inject the data in a Log analytics workspace.
 
 At this point you have all you need to collect local Linux Syslog messages from all selected facilities and log levels to Azure Log Analytics Workspace using Log Analytics agent (OMSAgent) and Syslog.
 
-To test that everything is working as expected you can basically use the command logger from a Linux terminal:
+To test that everything is working as expected you can use the command logger from a Linux terminal:
 
 ```
 logger "Test log from Linux Logger"
@@ -303,7 +302,7 @@ Syslog
 
 ## 5. Configuring RSyslog to receive messages from Network
 
-By default RSyslog doesn't listen to any TCP/UDP port. To make a Syslog Server become a forwarder server you must load a TCP or UDP module (or both). Here is the changes you must do at /etc/rsyslog.conf to make RSyslog start listening in both 514 TCP and UDP:
+By default RSyslog doesn't listen to any TCP/UDP port. To make a Syslog Server become a forwarder server you must load a TCP or UDP module (or both). Here are the changes you must make in /etc/rsyslog.conf to make RSyslog start listening in both 514 TCP and UDP:
 
 ```
 # Load UDP module
@@ -357,7 +356,7 @@ sudo systemctl restart rsyslog
 sudo systemctl status rsyslog
 ```
 
-You can check if your server are receiving messages remote messages using the logger command specifying to send a message to a remote server. From any remote Linux type the following command replacing the IP Address to your Syslog Forwarder server IP:
+You can check if your server is receiving remote messages using a logger command. From any Linux command line, type the following command (replace the IP address with your Syslog Forwarder server IP address):
 
 ```
 logger -n 10.0.5.8 -i --msgid "123" "Test log from remote Linux Logger"
@@ -410,17 +409,17 @@ FluentD has a concept of plugins like Input Plugins, Output Plugins, Filter Plug
         </buffer>
     </match>
     ```
-The main purpose for those plugins are to make FluentD extremely customizable. You can also write your own plugin to for example export the data to a specific database.
+These plugins make FluentD extremely customizable. You can also write your own plugin to for example export the data to a specific database.
 
 With this concept in mind that's how Log Analytics agent (OMSAgent) leverage from FluentD to receive logs (Input Plugin) and forward them to Log Analytics workspace (Output Plugin).
 
-For a full understand about FluentD check the [official documentation](https://docs.fluentd.org/).
+To learn more about FluentD, check out the official documentation [official documentation](https://docs.fluentd.org/).
 
 ## 7. Configuring RSyslog and Log Analytics agent to forward  Common Event Format (CEF) messages
 
 - **Log Analytics agent (OMSAgent)**
 
-    To configure the Log Analytics agent (OMSAgent) for CEF is necessary to create a new configuration file  with the following content:
+    To configure the Log Analytics agent (OMSAgent) for CEF, it is necessary to create a new configuration file with the following content:
 
     ```
     <source>
@@ -448,14 +447,14 @@ For a full understand about FluentD check the [official documentation](https://d
 
     > **Note:** Replace [workspaceID] with the desired Log Analytics workspace ID.
 
-    You can also achieve using the following command line which will copy the entire file from it source:
+    You can also use the following command line to copy the entire file from it source:
 
     ```
     wget -O /etc/opt/microsoft/omsagent/[workspaceID]/conf/omsagent.d/security_events.conf https://raw.githubusercontent.com/microsoft/OMS-Agent-for-Linux/master/installer/conf/omsagent.d/security_events.conf
     ```
     > **Note:** Replace [workspaceID] with the desired Log Analytics workspace ID.
 
-    This file is configuring Log Analytics agent (OMSAgent) using a FluentD Input Plugin. It's based in [syslog Input Plugin](https:/docs.fluentd.org/input/syslog) and it's been configured as follow:
+    This file configures the Log Analytics agent (OMSAgent) using a FluentD Input Plugin. It's based in [syslog Input Plugin](https:/docs.fluentd.org/input/syslog) and it's been configured as follow:
         
     - Listen on TCP port 25226 and binding to localhost onlye "127.0.0.1"
     - Tag all input data with "oms.security" tag
@@ -469,7 +468,9 @@ For a full understand about FluentD check the [official documentation](https://d
 
     > **Note:** FluentD is written in Ruby. You can open most of the plugins using any text editor.
 
-    For any Input Plugin there must be an Output Plugin. It means if you would like to check how the collected data gets injected in Log Analytics Workspace you can find the matching Output Plugin opening the main config file at:
+    For any Input Plugin there must be an Output Plugin. 
+
+    If you would like to see how the collected data gets injected in Log Analytics Workspace you can find the matching Output Plugin by opening the main config file at:
 
     ```
     /etc/opt/microsoft/omsagent/[workspaceID]/conf/omsagent.conf
@@ -512,7 +513,7 @@ For a full understand about FluentD check the [official documentation](https://d
     
 - **RSyslog**
 
-    To configure the RSyslog to start forwarding CEF/ASA messages to Log Analytics agent (TCP 25226) is necessary to create a new configuration file  with the following content:
+    To configure the RSyslog to start forwarding CEF/ASA messages to Log Analytics agent (TCP 25226) it is necessary to create a new configuration file with the following content:
 
     ```
     if $rawmsg contains "CEF:" or $rawmsg contains "ASA-" then @@127.0.0.1:25226
@@ -551,9 +552,9 @@ For a full understand about FluentD check the [official documentation](https://d
 
     ![Kusto Query CEF Test](media/kusto-cef-test.png)
 
-    At this point you have configured the RSyslog to forward all CEF messages to Log Analytics agent under a special filter that are listening under the port 25226 TCP. Any other syslog message will be forwarded to Log Analytics agent under the standard oms.syslog syslog filter using the port 25224 UDP.
+    At this point you have configured the RSyslog to forward all CEF messages to Log Analytics agent under a special filter that is listening for TCP packets on port 25226. All other syslog messages will be forwarded to Log Analytics agent under the standard oms.syslog syslog filter listening for UDP packets on port 25224.
 
-    You can see how the standard syslog messages gets filtered, parsed and sended to Log Analytics workspace by checking the following files:
+    You can see how the standard syslog messages gets filtered, parsed, and sent to the Log Analytics workspace by checking the following files:
 
     ```
     /etc/opt/microsoft/omsagent/[workspaceID]/conf/omsagent.d/syslog.conf
@@ -563,7 +564,7 @@ For a full understand about FluentD check the [official documentation](https://d
 
 ## 8. Troubleshooting
 
-Before we start digging into troubleshooting it's important to recap how RSyslog and Log Analytics agent are playing together.
+Before we start digging into troubleshooting it's important to recap how RSyslog and Log Analytics agent work together.
 
 RSyslog will be listening on port 514 TCP/UDP to receive remote syslog messages. All those messages will be saved under one of those two files depending on your Linux distribution:
 
@@ -578,7 +579,7 @@ Before going deep in troubleshooting is always a good to start from the basics r
 
  - **Network Troubleshooting**
 
-    The first part of the troubleshooting would be a confirmation the server is receiving data by checking log files or network trace.
+    First, we need to confirm that the server is receiving data by checking the log files or a network trace.
 
     You can check if all the services are listening in the right port by running the following command:
 
@@ -623,7 +624,7 @@ Before going deep in troubleshooting is always a good to start from the basics r
     sudo tcpdump -i lo -Xvv port 25224
     ```
 
-    In case the problem you are troubleshooting is related to CEF messages you can use the following command defining the port 25226:
+    If the problem you are troubleshooting is related to CEF messages you can use the following command defining the port 25226:
 
     ```
     sudo tcpdump -i lo -nnvvXS port 25226
