@@ -598,8 +598,7 @@ Before going deep in troubleshooting is always a good to start from the basics r
     There are some scenarios where you would like to troubleshoot the format of a syslog message. For those type of scenarios you can use the command nc (Netcat):
 
     ```
-    echo -n '<14>1 2021-02-10T16:36:59.945-05:00 msft-fw RT_FLOW - APPTRACK_SESSION_VOL_UPDATE [vws12@2636.1.1.1.2.105 source-address="192.168.0.1" source-port="59000" destination-address="13.0.0.9" destination-port="443" service-name="junos-https" application="SSL" nested-application="SHAREPOINT-ONLINE" nat-source-address="64.0.0.5" nat-source-port="33680" nat-destination-address="13.0.0.9" nat-destination-port="443" src-nat-rule-name="rule-27" dst-nat-rule-name="N/A" protocol-id="6" policy-name="VWSA-INTERNET-ACCESS" source-zone-name="TRUST" destination-zone-name="UNTRUST" session-id-32="35684215" packets-from-client="9" bytes-from-client="3045" packets-from-server="12" bytes-from-server="6664" elapsed-time="66" username="N/A" roles="N/A" encrypted="No1asdf"]' | nc -4u -w1 10.0.5.4
-    514
+    echo -n '<14>1 2021-02-10T16:36:59.945-05:00 msft-fw RT_FLOW - APPTRACK_SESSION_VOL_UPDATE [vws12@2636.1.1.1.2.105 source-address="192.168.0.1" source-port="59000" destination-address="13.0.0.9" destination-port="443" service-name="junos-https" application="SSL" nested-application="SHAREPOINT-ONLINE" nat-source-address="64.0.0.5" nat-source-port="33680" nat-destination-address="13.0.0.9" nat-destination-port="443" src-nat-rule-name="rule-27" dst-nat-rule-name="N/A" protocol-id="6" policy-name="VWSA-INTERNET-ACCESS" source-zone-name="TRUST" destination-zone-name="UNTRUST" session-id-32="35684215" packets-from-client="9" bytes-from-client="3045" packets-from-server="12" bytes-from-server="6664" elapsed-time="66" username="N/A" roles="N/A" encrypted="No1asdf"]' | nc -4u -w1 10.0.5.4 514
     ```
 
     To live check the log files in RSyslog you can use the following command:
